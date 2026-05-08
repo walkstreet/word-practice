@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# 未忽略 *.db：SQLite（如 backend/word_practice.db）可提交并同步到 GitHub
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# OS
+.DS_Store
