@@ -11,8 +11,12 @@ export default defineConfig({
       // 浏览器始终请求当前页面的同源 /api，再由 Vite 转到本机后端（避免写死 127.0.0.1）
       "/api": {
         target: "http://127.0.0.1:3000",
-        changeOrigin: true
-      }
-    }
-  }
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    port: 5173,
+    host: true,
+  },
 });
