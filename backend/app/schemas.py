@@ -219,6 +219,22 @@ class StatsResponse(BaseModel):
     accuracy: float
 
 
+class StatsSnapshotItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    total_answered: int
+    correct_count: int
+    wrong_count: int
+    accuracy: str
+    created_at: datetime
+
+
+class StatsSnapshotResponse(BaseModel):
+    total: int
+    list: List[StatsSnapshotItem]
+
+
 class PracticeHistoryItem(BaseModel):
     vocabulary_id: int
     word: str

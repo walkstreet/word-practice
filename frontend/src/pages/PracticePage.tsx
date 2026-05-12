@@ -21,7 +21,9 @@ type Question = {
   hint: { wordLength: number; missingCount: number };
 };
 
-function normalizeMaskSegments(raw: Question["masked_segments"]): MaskSegment[] | null {
+function normalizeMaskSegments(
+  raw: Question["masked_segments"],
+): MaskSegment[] | null {
   if (!raw?.length) {
     return null;
   }
@@ -38,6 +40,22 @@ type JudgeResult = {
   message: string;
   wrong_blank_indexes: number[];
 };
+
+const STATS_RESET_THRESHOLD_MS = 60 * 60 * 1000;
+const LAST_PRACTICE_INPUT_KEY = "wp_last_practice_input_time";
+
+function getLastPracticeInputTime(): Date | null {
+  const raw = localStorage.getItem(LAST_PRACTICE_INPUT_KEY);
+  if (!raw) {
+    return null;
+  }
+  const timestamp = Date.parse(raw);
+  return Number.isNaN(timestamp) ? null : new Date(timestamp);
+}
+
+function saveLastPracticeInputTime() {
+  localStorage.setItem(LAST_PRACTICE_INPUT_KEY, new Date().toISOString());
+}
 
 export default function PracticePage() {
   const [searchParams] = useSearchParams();
@@ -76,7 +94,31 @@ export default function PracticePage() {
   };
 
   useEffect(() => {
-    loadQuestion();
+    const maybeResetStats = async () => {
+      const lastInputTime = getLastPracticeInputTime();
+      if (!lastInputTime) {
+        return;
+      }
+      const now = new Date();
+      if (now.getTime() - lastInputTime.getTime() <= STATS_RESET_THRESHOLD_MS) {
+        return;
+      }
+      if (
+        window.confirm(
+          "检测到距上次练习输入已超过 1 小时，是否清空当前统计数据？此操作会删除练习记录。",
+        )
+      ) {
+        try {
+          await api.delete("/stats");
+        } catch {
+          setError("清空统计失败，请稍后再试");
+        }
+      }
+    };
+
+    maybeResetStats().finally(() => {
+      loadQuestion();
+    });
   }, [scope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -108,9 +150,10 @@ export default function PracticePage() {
       const res = await api.post("/practice/submit", {
         question_id: question.question_id,
         vocabulary_id: question.vocabulary_id,
-        missing_letters: compactMissing
+        missing_letters: compactMissing,
       });
       setResult(res.data);
+      saveLastPracticeInputTime();
     } catch {
       setError("提交失败，请稍后再试");
     } finally {
@@ -158,7 +201,9 @@ export default function PracticePage() {
           next[activeBlankIndex] = letter;
           return next;
         });
-        setActiveBlankIndex((prev) => Math.min(prev + 1, question.hint.missingCount - 1));
+        setActiveBlankIndex((prev) =>
+          Math.min(prev + 1, question.hint.missingCount - 1),
+        );
       }
     };
 
@@ -181,7 +226,7 @@ export default function PracticePage() {
   const rows = resolvePosTranslationRows(
     question?.senses,
     question?.part_of_speech || "",
-    question?.translation || ""
+    question?.translation || "",
   );
 
   return (
@@ -193,7 +238,9 @@ export default function PracticePage() {
             {showPhonetic ? (
               <p className="word-meta word-meta-row">
                 <span className="word-meta-ipa">
-                  {question.phonetic ? formatIpaForDisplay(question.phonetic) : "音标待补充"}
+                  {question.phonetic
+                    ? formatIpaForDisplay(question.phonetic)
+                    : "音标待补充"}
                 </span>
                 <button
                   type="button"
@@ -224,7 +271,11 @@ export default function PracticePage() {
               </div>
             ))}
             {result ? (
-              <p className={`practice-result ${result.is_correct ? "success" : "error"}`}>{result.message}</p>
+              <p
+                className={`practice-result ${result.is_correct ? "success" : "error"}`}
+              >
+                {result.message}
+              </p>
             ) : null}
           </div>
           <div className={`masked-board${segments ? " phrase-board" : ""}`}>
@@ -234,24 +285,36 @@ export default function PracticePage() {
                   return segments.map((segment, segIdx) => {
                     if ("literal" in segment) {
                       return (
-                        <span key={`phrase-lit-${segIdx}`} className="phrase-literal">
+                        <span
+                          key={`phrase-lit-${segIdx}`}
+                          className="phrase-literal"
+                        >
                           {segment.literal}
                         </span>
                       );
                     }
                     const cells = segment.cells;
                     return (
-                      <span key={`phrase-seg-${segIdx}`} className="phrase-word-group">
+                      <span
+                        key={`phrase-seg-${segIdx}`}
+                        className="phrase-word-group"
+                      >
                         {cells.map((token, tokenIndex) => {
                           if (token !== "_") {
                             return (
-                              <span key={`char-${segIdx}-${tokenIndex}`} className="masked-cell">
+                              <span
+                                key={`char-${segIdx}-${tokenIndex}`}
+                                className="masked-cell"
+                              >
                                 {token}
                               </span>
                             );
                           }
                           const blankIndex = runningBlank++;
-                          const isActive = blankIndex === activeBlankIndex && !result && !loading;
+                          const isActive =
+                            blankIndex === activeBlankIndex &&
+                            !result &&
+                            !loading;
                           const display = missingLetters[blankIndex] || "_";
                           const isWrong =
                             !!result &&
@@ -282,8 +345,11 @@ export default function PracticePage() {
                     );
                   }
 
-                  const blankIndex = blankMap.findIndex((idx) => idx === tokenIndex);
-                  const isActive = blankIndex === activeBlankIndex && !result && !loading;
+                  const blankIndex = blankMap.findIndex(
+                    (idx) => idx === tokenIndex,
+                  );
+                  const isActive =
+                    blankIndex === activeBlankIndex && !result && !loading;
                   const display = missingLetters[blankIndex] || "_";
                   const isWrong =
                     !!result &&
@@ -307,15 +373,15 @@ export default function PracticePage() {
             <button
               onClick={submit}
               disabled={
-                missingLetters.some((letter) => !letter) ||
-                !!result ||
-                loading
+                missingLetters.some((letter) => !letter) || !!result || loading
               }
             >
               提交
             </button>
           </div>
-          <p className="bottom-hint">请直接键盘输入填空，Backspace 删除，Enter 提交</p>
+          <p className="bottom-hint">
+            请直接键盘输入填空，Backspace 删除，Enter 提交
+          </p>
         </>
       ) : null}
       {error ? <p className="error">{error}</p> : null}

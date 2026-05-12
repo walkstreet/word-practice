@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     # Dify / 自动化导入：`X-API-Key` 须与此一致（可用环境变量 DIFY_IMPORT_API_KEY 覆盖）
     dify_import_api_key: str = "dify"
+    # 启动时是否自动删除 admin 以外用户。默认关闭，避免注册用户重启后丢失。
+    prune_non_admin_users_on_startup: bool = False
     # 浏览器 Origin 与白名单匹配的跨域请求（含局域网用手机/电脑 IP 打开前端时直连 API）。
     # 勿在公网裸奔部署时继续用过宽的正则；可用环境变量覆盖为更严规则或空字符串关闭正则仅保留 allow_origins。
     cors_allow_origin_regex: str = Field(
