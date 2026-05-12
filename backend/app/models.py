@@ -59,3 +59,17 @@ class WrongBook(Base):
 
     user = relationship("User")
     vocabulary = relationship("Vocabulary")
+
+
+class StatsSnapshot(Base):
+    __tablename__ = "stats_snapshot"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    total_answered = Column(Integer, nullable=False)
+    correct_count = Column(Integer, nullable=False)
+    wrong_count = Column(Integer, nullable=False)
+    accuracy = Column(String(10), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User")

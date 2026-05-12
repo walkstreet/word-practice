@@ -71,15 +71,9 @@ $keyHandler = {
     Stop-Both
     [Environment]::Exit(0)
 }
-[Console]::CancelKeyPress += $keyHandler
-
-Write-Host "后端 http://127.0.0.1:${BackPort}"
-Write-Host "前端 http://127.0.0.1:${FrontPort}"
-Write-Host "（跨机访问前端需先设 VITE_API_BASE_URL 再 build，见 frontend\src\api.ts）"
 
 try {
     Wait-Process -InputObject @($BackendProc, $FrontendProc)
 } finally {
-    [Console]::CancelKeyPress -= $keyHandler
     Stop-Both
 }

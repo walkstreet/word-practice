@@ -69,7 +69,8 @@ def prune_non_admin_users():
         db.close()
 
 
-prune_non_admin_users()
+if settings.prune_non_admin_users_on_startup:
+    prune_non_admin_users()
 
 app = FastAPI(title=settings.app_name)
 

@@ -15,7 +15,6 @@ if (-not (Test-Path $venvPath)) {
 
 $venvPy = Join-Path $venvPath 'Scripts\python.exe'
 if (-not (Test-Path $venvPy)) {
-    Write-Error "未找到 venv 内的 python：$venvPy（请确认已用 Windows 版 Python 创建 venv）"
     exit 1
 }
 
@@ -28,5 +27,3 @@ try {
 } finally {
     Pop-Location
 }
-
-Write-Host "依赖已装好。生产启动：.\scripts\start-prod.ps1"
