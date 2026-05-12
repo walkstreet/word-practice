@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
-from app.db import Base
+from app.db import Base, VocabBase
 
 
 class User(Base):
@@ -15,7 +15,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
-class Vocabulary(Base):
+class Vocabulary(VocabBase):
     __tablename__ = "vocabulary"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -34,7 +34,7 @@ class PracticeRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    vocabulary_id = Column(Integer, ForeignKey("vocabulary.id"), index=True, nullable=False)
+    vocabulary_id = Column(Integer, index=True, nullable=False)
     question_mask = Column(String(255), nullable=False)
     missing_positions = Column(JSON, nullable=False)
     user_answer = Column(String(128), nullable=False)
@@ -43,7 +43,6 @@ class PracticeRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user = relationship("User")
-    vocabulary = relationship("Vocabulary")
 
 
 class WrongBook(Base):
@@ -52,7 +51,7 @@ class WrongBook(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
-    vocabulary_id = Column(Integer, ForeignKey("vocabulary.id"), index=True, nullable=False)
+    vocabulary_id = Column(Integer, index=True, nullable=False)
     wrong_count = Column(Integer, nullable=False, default=1)
     first_wrong_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_wrong_at = Column(DateTime, default=datetime.utcnow, nullable=False)

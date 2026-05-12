@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import get_db, get_vocab_db
 from app.deps import get_current_user
 from app.models import User, Vocabulary, WrongBook
 from app.schemas import WrongBookItem, WrongBookResponse
@@ -24,6 +24,7 @@ def list_wrongbook(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     user: User = Depends(get_current_user),
 ):
     query = db.query(WrongBook).filter(WrongBook.user_id == user.id)
@@ -37,7 +38,7 @@ def list_wrongbook(
 
     items = []
     for row in rows:
-        vocab = db.query(Vocabulary).filter(Vocabulary.id == row.vocabulary_id).first()
+        vocab = vocab_db.query(Vocabulary).filter(Vocabulary.id == row.vocabulary_id).first()
         items.append(
             WrongBookItem(
                 vocabulary_id=row.vocabulary_id,

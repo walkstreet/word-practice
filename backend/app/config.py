@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
     database_url: str = "sqlite:///./word_practice.db"
+    # 词条库单独文件，便于备份/替换词表而不动用户与练习记录
+    vocabulary_database_url: str = "sqlite:///./vocabulary.db"
     word_missing_ratio: float = Field(default=0.5, ge=0.1, le=0.9)
     # 所有业务路由挂载在此前缀下（环境变量 API_PREFIX），例如 /api 或 /api/v1
     api_prefix: str = "/api"
@@ -46,6 +48,9 @@ class Settings(BaseSettings):
         url = self.database_url
         if url.startswith("sqlite:///"):
             object.__setattr__(self, "database_url", _resolve_sqlite_url(url))
+        vurl = self.vocabulary_database_url
+        if vurl.startswith("sqlite:///"):
+            object.__setattr__(self, "vocabulary_database_url", _resolve_sqlite_url(vurl))
         return self
 
     @model_validator(mode="after")

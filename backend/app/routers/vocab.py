@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import get_db, get_vocab_db
 from app.deps import get_current_user, verify_dify_import_api_key
 from app.models import PracticeRecord, User, Vocabulary, WrongBook
 from app.schemas import (
@@ -28,12 +28,12 @@ router = APIRouter(tags=["vocab"])
 _BATCH_DELETE_MAX = 500
 
 
-def delete_vocabulary_ids(db: Session, ids: list[int]) -> tuple[int, int]:
+def delete_vocabulary_ids(db: Session, vocab_db: Session, ids: list[int]) -> tuple[int, int]:
     """按 id 批量删除词条及其 practice_record / wrong_book。返回 (删除条数, 请求中不存在的 id 数)。"""
     order = list(dict.fromkeys(int(i) for i in ids if i is not None))
     if not order:
         return 0, 0
-    found_rows = db.query(Vocabulary.id).filter(Vocabulary.id.in_(order)).all()
+    found_rows = vocab_db.query(Vocabulary.id).filter(Vocabulary.id.in_(order)).all()
     found_ids = [r[0] for r in found_rows]
     found_set = set(found_ids)
     not_found = sum(1 for i in order if i not in found_set)
@@ -41,7 +41,7 @@ def delete_vocabulary_ids(db: Session, ids: list[int]) -> tuple[int, int]:
         return 0, not_found
     db.query(PracticeRecord).filter(PracticeRecord.vocabulary_id.in_(found_ids)).delete(synchronize_session=False)
     db.query(WrongBook).filter(WrongBook.vocabulary_id.in_(found_ids)).delete(synchronize_session=False)
-    deleted = db.query(Vocabulary).filter(Vocabulary.id.in_(found_ids)).delete(synchronize_session=False)
+    deleted = vocab_db.query(Vocabulary).filter(Vocabulary.id.in_(found_ids)).delete(synchronize_session=False)
     return deleted, not_found
 
 
@@ -51,7 +51,7 @@ def dify_ping(_: None = Depends(verify_dify_import_api_key)):
     return {"status": "ok", "service": "word-practice"}
 
 
-def import_vocabulary_from_rows(db: Session, rows: list[dict], *, source: str) -> ImportResponse:
+def import_vocabulary_from_rows(vocab_db: Session, rows: list[dict], *, source: str) -> ImportResponse:
     request_words = [normalize_word(str(r.get("word") or "")) for r in rows]
     total = 0
     success = 0
@@ -93,7 +93,7 @@ def import_vocabulary_from_rows(db: Session, rows: list[dict], *, source: str) -
                 {"line": line_number, "word": word, "dedup_key": normalized, "reason": "duplicate in this batch"}
             )
             continue
-        existing = db.query(Vocabulary).filter(Vocabulary.word == word).first()
+        existing = vocab_db.query(Vocabulary).filter(Vocabulary.word == word).first()
         if existing:
             duplicated_skipped += 1
             duplicate_skips.append(
@@ -118,14 +118,14 @@ def import_vocabulary_from_rows(db: Session, rows: list[dict], *, source: str) -
             source=source,
             senses=senses_stored,
         )
-        db.add(row_obj)
+        vocab_db.add(row_obj)
         staged.append((line_number, row_obj))
         success += 1
 
-    db.commit()
+    vocab_db.commit()
     inserted_rows: list[dict] = []
     for line_number, v in staged:
-        db.refresh(v)
+        vocab_db.refresh(v)
         inserted_rows.append({"line": line_number, "id": v.id, "word": v.word})
     failed = len(errors)
 
@@ -145,6 +145,7 @@ def import_vocabulary_from_rows(db: Session, rows: list[dict], *, source: str) -
 def batch_delete_vocab(
     body: VocabularyBatchDeleteBody,
     db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     _: User = Depends(get_current_user),
 ):
     if not body.ids:
@@ -155,8 +156,9 @@ def batch_delete_vocab(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"at most {_BATCH_DELETE_MAX} ids per request",
         )
-    deleted, not_found = delete_vocabulary_ids(db, order)
+    deleted, not_found = delete_vocabulary_ids(db, vocab_db, order)
     db.commit()
+    vocab_db.commit()
     return VocabularyBatchDeleteResponse(deleted=deleted, not_found=not_found)
 
 
@@ -164,16 +166,16 @@ def batch_delete_vocab(
 def update_vocab(
     vocabulary_id: int,
     body: VocabularyUpdateBody,
-    db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     _: User = Depends(get_current_user),
 ):
-    row = db.query(Vocabulary).filter(Vocabulary.id == vocabulary_id).first()
+    row = vocab_db.query(Vocabulary).filter(Vocabulary.id == vocabulary_id).first()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vocabulary not found")
 
     w = normalize_word(body.word)
     if w != row.word:
-        clash = db.query(Vocabulary).filter(Vocabulary.word == w, Vocabulary.id != vocabulary_id).first()
+        clash = vocab_db.query(Vocabulary).filter(Vocabulary.word == w, Vocabulary.id != vocabulary_id).first()
         if clash:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="word already exists")
 
@@ -193,8 +195,8 @@ def update_vocab(
     row.translation = translation
     row.part_of_speech = part_of_speech
     row.senses = senses_stored
-    db.commit()
-    db.refresh(row)
+    vocab_db.commit()
+    vocab_db.refresh(row)
 
     return VocabularyItem(
         id=row.id,
@@ -210,12 +212,14 @@ def update_vocab(
 def delete_vocab(
     vocabulary_id: int,
     db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     _: User = Depends(get_current_user),
 ):
-    deleted, _ = delete_vocabulary_ids(db, [vocabulary_id])
+    deleted, _ = delete_vocabulary_ids(db, vocab_db, [vocabulary_id])
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vocabulary not found")
     db.commit()
+    vocab_db.commit()
 
 
 @router.get("/vocab", response_model=VocabularyListResponse)
@@ -223,10 +227,10 @@ def list_vocab(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=500),
     q: str | None = Query(default=None),
-    db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     _: User = Depends(get_current_user),
 ):
-    query = db.query(Vocabulary)
+    query = vocab_db.query(Vocabulary)
     if q:
         needle = f"%{q.strip().lower()}%"
         query = query.filter(
@@ -262,7 +266,7 @@ def list_vocab(
 @router.post("/vocab/import", response_model=ImportResponse)
 def import_vocab(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     _: User = Depends(get_current_user),
 ):
     if not file.filename.lower().endswith(".csv"):
@@ -278,13 +282,13 @@ def import_vocab(
         )
 
     rows = list(reader)
-    return import_vocabulary_from_rows(db, rows, source="import")
+    return import_vocabulary_from_rows(vocab_db, rows, source="import")
 
 
 @router.post("/vocab/import/dify", response_model=ImportResponse)
 def import_vocab_dify(
     batch: DifyVocabImportBatch,
-    db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     _: None = Depends(verify_dify_import_api_key),
 ):
     rows = []
@@ -293,4 +297,4 @@ def import_vocab_dify(
         if item.senses is not None:
             d["senses"] = [s.model_dump() for s in item.senses]
         rows.append(d)
-    return import_vocabulary_from_rows(db, rows, source="dify")
+    return import_vocabulary_from_rows(vocab_db, rows, source="dify")

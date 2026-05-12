@@ -3,16 +3,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.config import settings
-from app.db import Base, engine
+from app.db import Base, SessionLocal, VocabBase, VocabSessionLocal, engine, vocab_engine
+from app.migrate_legacy_vocabulary import migrate_split_vocabulary_if_needed, repair_app_db_if_vocab_table_missing
 from app.routers import auth, practice, stats, vocab, wrongbook
 
+# 确保模型类已注册到各自 metadata
+from app.models import PracticeRecord, User, Vocabulary, WrongBook  # noqa: F401,E402
 
 Base.metadata.create_all(bind=engine)
+VocabBase.metadata.create_all(bind=vocab_engine)
+migrate_split_vocabulary_if_needed(engine, vocab_engine)
+repair_app_db_if_vocab_table_missing(engine)
 
 
 def ensure_vocabulary_columns():
-    with engine.begin() as conn:
+    with vocab_engine.begin() as conn:
         columns = {row[1] for row in conn.execute(text("PRAGMA table_info(vocabulary)")).fetchall()}
+        if not columns:
+            return
         if "phonetic" not in columns:
             conn.execute(text("ALTER TABLE vocabulary ADD COLUMN phonetic VARCHAR(128) NOT NULL DEFAULT ''"))
         if "part_of_speech" not in columns:
@@ -28,11 +36,9 @@ ensure_vocabulary_columns()
 
 def sync_vocabulary_normalized_words():
     """用与导入相同的 Python 规则统一 word / normalized_word，避免历史 SQL TRIM 与 NFKC strip 不一致。"""
-    from app.db import SessionLocal
-    from app.models import Vocabulary
     from app.services.masking import normalize_word as canon_word
 
-    db = SessionLocal()
+    db = VocabSessionLocal()
     try:
         for row in db.query(Vocabulary).all():
             w = canon_word(row.word)
@@ -50,7 +56,6 @@ sync_vocabulary_normalized_words()
 
 def prune_non_admin_users():
     """个人使用：若库中有用户名为 admin 的账号，删除其余用户及其练习、错题数据。"""
-    from app.db import SessionLocal
     from app.models import PracticeRecord, User, WrongBook
 
     db = SessionLocal()
@@ -97,4 +102,7 @@ def health():
     url = settings.database_url
     if url.startswith("sqlite:///"):
         out["sqlite_path"] = url.replace("sqlite:///", "")
+    vurl = settings.vocabulary_database_url
+    if vurl.startswith("sqlite:///"):
+        out["vocabulary_sqlite_path"] = vurl.replace("sqlite:///", "")
     return out

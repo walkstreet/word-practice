@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import get_db, get_vocab_db
 from app.deps import get_current_user
 from app.models import PracticeRecord, User, Vocabulary, WrongBook
 from app.schemas import (
@@ -41,6 +41,7 @@ def to_current_timezone(dt: datetime) -> datetime:
 def next_question(
     scope: str = Query(default="all"),
     db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     user: User = Depends(get_current_user),
 ):
     if scope not in {"all", "wrongbook"}:
@@ -49,14 +50,14 @@ def next_question(
     if scope == "wrongbook":
         ids = db.query(WrongBook.vocabulary_id).filter(WrongBook.user_id == user.id).all()
     else:
-        ids = db.query(Vocabulary.id).all()
+        ids = vocab_db.query(Vocabulary.id).all()
     if not ids:
         if scope == "wrongbook":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wrong book is empty")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vocabulary is empty")
 
     vocabulary_id = random.choice(ids)[0]
-    vocab = db.query(Vocabulary).filter(Vocabulary.id == vocabulary_id).first()
+    vocab = vocab_db.query(Vocabulary).filter(Vocabulary.id == vocabulary_id).first()
     primary = pick_primary_answer(vocab.word)
     ordered = phrase_ordered_parts(primary)
     words = [text for kind, text in ordered if kind == "word"]
@@ -93,6 +94,7 @@ def next_question(
 def submit_answer(
     payload: SubmitRequest,
     db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     user: User = Depends(get_current_user),
 ):
     try:
@@ -105,7 +107,7 @@ def submit_answer(
     if int(question_payload.get("user_id", -1)) != user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question_id does not match user")
 
-    vocab = db.query(Vocabulary).filter(Vocabulary.id == payload.vocabulary_id).first()
+    vocab = vocab_db.query(Vocabulary).filter(Vocabulary.id == payload.vocabulary_id).first()
     if not vocab:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vocabulary not found")
 
@@ -185,6 +187,7 @@ def practice_history(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    vocab_db: Session = Depends(get_vocab_db),
     user: User = Depends(get_current_user),
 ):
     query = db.query(PracticeRecord).filter(PracticeRecord.user_id == user.id)
@@ -198,7 +201,7 @@ def practice_history(
 
     items = []
     for row in rows:
-        vocab = db.query(Vocabulary).filter(Vocabulary.id == row.vocabulary_id).first()
+        vocab = vocab_db.query(Vocabulary).filter(Vocabulary.id == row.vocabulary_id).first()
         items.append(
             PracticeHistoryItem(
                 vocabulary_id=row.vocabulary_id,
