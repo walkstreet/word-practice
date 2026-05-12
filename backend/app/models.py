@@ -57,7 +57,6 @@ class WrongBook(Base):
     last_wrong_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user = relationship("User")
-    vocabulary = relationship("Vocabulary")
 
 
 class StatsSnapshot(Base):
