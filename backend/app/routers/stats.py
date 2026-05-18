@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -5,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import get_current_user
 from app.models import PracticeRecord, User, StatsSnapshot
-from app.schemas import StatsResponse, StatsSnapshotResponse
+from app.schemas import StatsResponse, StatsSnapshotResponse, StatsSnapshotItem
 
 
 router = APIRouter(prefix="/stats", tags=["stats"])
@@ -42,6 +44,12 @@ def reset_stats(
     db.query(PracticeRecord).filter(PracticeRecord.user_id == user.id).delete()
     db.commit()
     return {"message": "统计数据已清零"}
+
+
+def to_current_timezone(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone()
 
 
 @router.post("/snapshots")
@@ -84,7 +92,20 @@ def get_stats_snapshots(
         .order_by(StatsSnapshot.created_at.desc())
         .all()
     )
-    return StatsSnapshotResponse(total=len(snapshots), list=snapshots)
+    return StatsSnapshotResponse(
+        total=len(snapshots),
+        list=[
+            StatsSnapshotItem(
+                id=snapshot.id,
+                total_answered=snapshot.total_answered,
+                correct_count=snapshot.correct_count,
+                wrong_count=snapshot.wrong_count,
+                accuracy=snapshot.accuracy,
+                created_at=to_current_timezone(snapshot.created_at),
+            )
+            for snapshot in snapshots
+        ],
+    )
 
 
 @router.delete("/snapshots/{snapshot_id}")
