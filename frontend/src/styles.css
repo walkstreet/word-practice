@@ -111,6 +111,18 @@ body {
   border-color: #f5c3c3;
 }
 
+.ghost-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  color: #8f95a0;
+  background: #f3f4f7;
+  border-color: #d7d9e0;
+}
+
+.ghost-btn:disabled:hover {
+  background: #f3f4f7;
+}
+
 .ghost-btn.danger:hover:not(:disabled) {
   background: #fef2f2;
   border-color: #e88d8d;
@@ -480,6 +492,69 @@ input.table-checkbox:disabled {
 .sense-meaning {
   flex: 1;
   line-height: 1.45;
+}
+
+.wrongbook-table th {
+  background: #f7f9ff;
+}
+
+.wrongbook-table tr:hover td {
+  background: #fcfdff;
+}
+
+.wrongbook-table .col-phonetic {
+  white-space: nowrap;
+  color: #5f6473;
+}
+
+.wrongbook-table .col-error-count {
+  width: 120px;
+}
+
+.wrongbook-pager,
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.back-to-top-fixed {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 50;
+  border-radius: 999px;
+  padding: 12px 16px;
+  border: none;
+  background: #2f63ff;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 16px 40px rgba(45, 67, 130, 0.24);
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.back-to-top-fixed:hover {
+  transform: translateY(-2px);
+}
+
+.back-to-top-fixed:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #b7c3f0;
+  color: #eef1ff;
+  box-shadow: none;
+}
+
+.vocab-meta {
+  margin: 4px 0 0;
+  color: #5f6473;
+  font-size: 14px;
 }
 
 .vocab-table .col-actions {
