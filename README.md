@@ -44,11 +44,17 @@ Vite已配置 **`server.host: true`**，`npm run dev` 时不要加 `--host 127.0
 
 ## Scripts
 
-根目录提供脚本以简化依赖安装和生产启动：
+根目录提供脚本以简化依赖安装、开发调试和生产启动：
 
+- 开发环境：
+  - `node start.js`
+    - 启动后端 `uvicorn` 开发服务器（`--reload`）
+    - 启动前端 Vite 开发服务器，支持热加载
 - Windows PowerShell:
-  - `.\scripts\install-deps.ps1`
-  - `.\scripts\start-prod.ps1`
+  - `.
+scripts\install-deps.ps1`
+  - `.
+scripts\start-prod.ps1`
 - Unix / macOS / Linux:
   - `./scripts/install-deps.sh`
   - `./scripts/start-prod.sh`
