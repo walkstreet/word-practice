@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -82,18 +82,22 @@ def save_stats_snapshot(
 
 @router.get("/snapshots", response_model=StatsSnapshotResponse)
 def get_stats_snapshots(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """获取所有保存的统计快照"""
+    """获取保存的统计快照，按页返回"""
+    query = db.query(StatsSnapshot).filter(StatsSnapshot.user_id == user.id)
+    total = query.count()
     snapshots = (
-        db.query(StatsSnapshot)
-        .filter(StatsSnapshot.user_id == user.id)
-        .order_by(StatsSnapshot.created_at.desc())
+        query.order_by(StatsSnapshot.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
     return StatsSnapshotResponse(
-        total=len(snapshots),
+        total=total,
         list=[
             StatsSnapshotItem(
                 id=snapshot.id,

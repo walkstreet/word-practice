@@ -22,7 +22,7 @@ def to_current_timezone(dt: datetime) -> datetime:
 @router.get("", response_model=WrongBookResponse)
 def list_wrongbook(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
     vocab_db: Session = Depends(get_vocab_db),
     user: User = Depends(get_current_user),

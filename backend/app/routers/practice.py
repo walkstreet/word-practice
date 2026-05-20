@@ -37,6 +37,20 @@ def to_current_timezone(dt: datetime) -> datetime:
     return dt.astimezone()
 
 
+def trim_practice_history(db: Session, user_id: int, keep_limit: int = 50) -> None:
+    keep_ids = (
+        db.query(PracticeRecord.id)
+        .filter(PracticeRecord.user_id == user_id)
+        .order_by(PracticeRecord.created_at.desc())
+        .limit(keep_limit)
+        .subquery()
+    )
+    db.query(PracticeRecord).filter(
+        PracticeRecord.user_id == user_id,
+        PracticeRecord.id.notin_(keep_ids),
+    ).delete(synchronize_session=False)
+
+
 @router.get("/next", response_model=NextQuestionResponse)
 def next_question(
     scope: str = Query(default="all"),
@@ -142,6 +156,24 @@ def submit_answer(
 
     canonical_display = assemble_surface(ordered, words) if words else vocab.word
 
+    wrong = (
+        db.query(WrongBook)
+        .filter(WrongBook.user_id == user.id, WrongBook.vocabulary_id == vocab.id)
+        .first()
+    )
+
+    last_record = None
+    if wrong and is_correct:
+        last_record = (
+            db.query(PracticeRecord)
+            .filter(
+                PracticeRecord.user_id == user.id,
+                PracticeRecord.vocabulary_id == vocab.id,
+            )
+            .order_by(PracticeRecord.created_at.desc())
+            .first()
+        )
+
     record = PracticeRecord(
         user_id=user.id,
         vocabulary_id=vocab.id,
@@ -152,19 +184,22 @@ def submit_answer(
         is_correct=is_correct,
     )
     db.add(record)
+    db.flush()
 
-    if not is_correct:
-        wrong = (
-            db.query(WrongBook)
-            .filter(WrongBook.user_id == user.id, WrongBook.vocabulary_id == vocab.id)
-            .first()
-        )
+    if is_correct:
+        if wrong and last_record and last_record.is_correct:
+            db.query(WrongBook).filter(
+                WrongBook.user_id == user.id,
+                WrongBook.vocabulary_id == vocab.id,
+            ).delete(synchronize_session=False)
+    else:
         if wrong:
             wrong.wrong_count += 1
         else:
             wrong = WrongBook(user_id=user.id, vocabulary_id=vocab.id, wrong_count=1)
             db.add(wrong)
 
+    trim_practice_history(db, user.id)
     db.commit()
 
     if is_correct:
@@ -184,20 +219,17 @@ def submit_answer(
 
 @router.get("/history", response_model=PracticeHistoryResponse)
 def practice_history(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     vocab_db: Session = Depends(get_vocab_db),
     user: User = Depends(get_current_user),
 ):
     query = db.query(PracticeRecord).filter(PracticeRecord.user_id == user.id)
-    total = query.count()
     rows = (
         query.order_by(PracticeRecord.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        .limit(50)
         .all()
     )
+    total = len(rows)
 
     items = []
     for row in rows:

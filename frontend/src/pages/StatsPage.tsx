@@ -20,8 +20,12 @@ type Snapshot = {
 export default function StatsPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [snapshotTotal, setSnapshotTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const pageSize = 50;
 
   const loadStats = () => {
     setLoading(true);
@@ -37,14 +41,30 @@ export default function StatsPage() {
 
   const loadSnapshots = () => {
     api
-      .get("/stats/snapshots")
-      .then((res) => setSnapshots(res.data.list))
+      .get("/stats/snapshots", { params: { page, page_size: pageSize } })
+      .then((res) => {
+        setSnapshots(res.data.list);
+        setSnapshotTotal(Number(res.data.total || 0));
+        setError("");
+      })
       .catch(() => setError("加载快照失败"));
   };
 
   useEffect(() => {
     loadStats();
+  }, []);
+
+  useEffect(() => {
     loadSnapshots();
+  }, [page]);
+
+  useEffect(() => {
+    const updateVisible = () => {
+      setShowBackToTop(window.scrollY > window.innerHeight / 2);
+    };
+    updateVisible();
+    window.addEventListener("scroll", updateVisible);
+    return () => window.removeEventListener("scroll", updateVisible);
   }, []);
 
   const handleResetStats = async () => {
@@ -97,6 +117,8 @@ export default function StatsPage() {
     return new Date(dateString).toLocaleString("zh-CN");
   };
 
+  const totalPages = Math.max(1, Math.ceil(snapshotTotal / pageSize));
+
   return (
     <div className="card">
       <h2>统计</h2>
@@ -143,6 +165,30 @@ export default function StatsPage() {
       {snapshots.length > 0 && (
         <div style={{ marginTop: "30px" }}>
           <h3>保存的快照</h3>
+          {snapshotTotal > 0 ? (
+            <div className="pager" style={{ marginTop: "12px" }}>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                上一页
+              </button>
+              <span className="pager-info">
+                共 {snapshotTotal} 条 · 每页 {pageSize} 条 · 第 {page} /{" "}
+                {totalPages} 页
+              </span>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                下一页
+              </button>
+            </div>
+          ) : null}
           <table
             style={{
               width: "100%",
@@ -249,8 +295,41 @@ export default function StatsPage() {
               ))}
             </tbody>
           </table>
+          {snapshotTotal > 0 ? (
+            <div className="pager" style={{ marginTop: "12px" }}>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                上一页
+              </button>
+              <span className="pager-info">
+                共 {snapshotTotal} 条 · 每页 {pageSize} 条 · 第 {page} /{" "}
+                {totalPages} 页
+              </span>
+              <button
+                type="button"
+                className="ghost-btn"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                下一页
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
+      {showBackToTop ? (
+        <button
+          type="button"
+          className="ghost-btn back-to-top-fixed"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        >
+          返回顶部
+        </button>
+      ) : null}
     </div>
   );
 }
