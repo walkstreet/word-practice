@@ -8,7 +8,7 @@ from app.migrate_legacy_vocabulary import migrate_split_vocabulary_if_needed, re
 from app.routers import auth, practice, stats, vocab, wrongbook
 
 # 确保模型类已注册到各自 metadata
-from app.models import PracticeRecord, User, Vocabulary, WrongBook  # noqa: F401,E402
+from app.models import PracticeRecord, User, VocabGroup, Vocabulary, WrongBook  # noqa: F401,E402
 
 Base.metadata.create_all(bind=engine)
 VocabBase.metadata.create_all(bind=vocab_engine)
@@ -29,6 +29,8 @@ def ensure_vocabulary_columns():
             )
         if "senses" not in columns:
             conn.execute(text("ALTER TABLE vocabulary ADD COLUMN senses JSON"))
+        if "group_name" not in columns:
+            conn.execute(text("ALTER TABLE vocabulary ADD COLUMN group_name VARCHAR(128) NOT NULL DEFAULT ''"))
 
 
 ensure_vocabulary_columns()

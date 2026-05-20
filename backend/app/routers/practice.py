@@ -29,6 +29,8 @@ from app.services.senses import to_sense_out_list
 
 
 router = APIRouter(prefix="/practice", tags=["practice"])
+GROUP_FILTER_ALL = "__ALL__"
+GROUP_FILTER_UNGROUPED = "__UNGROUPED__"
 
 
 def to_current_timezone(dt: datetime) -> datetime:
@@ -37,23 +39,10 @@ def to_current_timezone(dt: datetime) -> datetime:
     return dt.astimezone()
 
 
-def trim_practice_history(db: Session, user_id: int, keep_limit: int = 50) -> None:
-    keep_ids = (
-        db.query(PracticeRecord.id)
-        .filter(PracticeRecord.user_id == user_id)
-        .order_by(PracticeRecord.created_at.desc())
-        .limit(keep_limit)
-        .subquery()
-    )
-    db.query(PracticeRecord).filter(
-        PracticeRecord.user_id == user_id,
-        PracticeRecord.id.notin_(keep_ids),
-    ).delete(synchronize_session=False)
-
-
 @router.get("/next", response_model=NextQuestionResponse)
 def next_question(
     scope: str = Query(default="all"),
+    vocab_group: str = Query(default=GROUP_FILTER_ALL),
     db: Session = Depends(get_db),
     vocab_db: Session = Depends(get_vocab_db),
     user: User = Depends(get_current_user),
@@ -64,7 +53,14 @@ def next_question(
     if scope == "wrongbook":
         ids = db.query(WrongBook.vocabulary_id).filter(WrongBook.user_id == user.id).all()
     else:
-        ids = vocab_db.query(Vocabulary.id).all()
+        vocab_query = vocab_db.query(Vocabulary.id)
+        group_value = (vocab_group or "").strip()
+        if group_value and group_value != GROUP_FILTER_ALL:
+            if group_value == GROUP_FILTER_UNGROUPED:
+                vocab_query = vocab_query.filter(Vocabulary.group_name == "")
+            else:
+                vocab_query = vocab_query.filter(Vocabulary.group_name == group_value)
+        ids = vocab_query.all()
     if not ids:
         if scope == "wrongbook":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wrong book is empty")
@@ -199,7 +195,6 @@ def submit_answer(
             wrong = WrongBook(user_id=user.id, vocabulary_id=vocab.id, wrong_count=1)
             db.add(wrong)
 
-    trim_practice_history(db, user.id)
     db.commit()
 
     if is_correct:

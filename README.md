@@ -78,3 +78,21 @@ word,translation,phonetic,part_of_speech
 apple,名词 n. 苹果；苹果树,ˈæpəl,n.
 record,名词 n. 记录；动词 v. 记下,rɪˈkɔːd,n.;v.
 ```
+
+## Migrate Old User Data
+
+如果你有旧版本的 `word_practice.db`，可将其统计数据（练习记录、统计快照）与错题本相关词条迁入当前库：
+
+```bash
+cd backend
+source .venv/bin/activate
+python -m app.migrate_external_user_data \
+  --source-db "/path/to/old/word_practice.db" \
+  --source-username admin \
+  --target-username admin
+```
+
+迁移会做去重并合并：
+- 词条按单词去重导入到当前词库（仅迁入错题/练习记录引用到的词）。
+- 错题本按 `(user_id, vocabulary_id)` 合并。
+- 练习记录与统计快照按内容签名去重后写入。
