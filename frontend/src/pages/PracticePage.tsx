@@ -5,6 +5,7 @@ import { formatIpaForDisplay } from "../ipaDisplay";
 import { resolvePosTranslationRows } from "../parsePosTranslation";
 import { cancelSpeech, speakEnglishWord } from "../speakWord";
 import { useUiPreferences } from "../uiPreferences";
+import { GROUP_FILTER_ALL } from "../vocabGroups";
 
 type MaskSegment = { cells: string[] } | { literal: string };
 
@@ -59,7 +60,7 @@ function saveLastPracticeInputTime() {
 
 export default function PracticePage() {
   const [searchParams] = useSearchParams();
-  const { showPhonetic } = useUiPreferences();
+  const { showPhonetic, practiceVocabGroup } = useUiPreferences();
   const [question, setQuestion] = useState<Question | null>(null);
   const [missingLetters, setMissingLetters] = useState<string[]>([]);
   const [activeBlankIndex, setActiveBlankIndex] = useState(0);
@@ -74,7 +75,11 @@ export default function PracticePage() {
     setError("");
     setResult(null);
     try {
-      const res = await api.get("/practice/next", { params: { scope } });
+      const params: Record<string, string> = { scope };
+      if (scope === "all" && practiceVocabGroup !== GROUP_FILTER_ALL) {
+        params.vocab_group = practiceVocabGroup;
+      }
+      const res = await api.get("/practice/next", { params });
       const nextQuestion = res.data as Question;
       setQuestion(nextQuestion);
       setMissingLetters(Array(nextQuestion.hint.missingCount).fill(""));
@@ -119,7 +124,7 @@ export default function PracticePage() {
     maybeResetStats().finally(() => {
       loadQuestion();
     });
-  }, [scope]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scope, practiceVocabGroup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => cancelSpeech();

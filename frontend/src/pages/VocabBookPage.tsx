@@ -2,6 +2,11 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { formatIpaForDisplay } from "../ipaDisplay";
 import { resolvePosTranslationRows } from "../parsePosTranslation";
+import {
+  displayGroupName,
+  GROUP_FILTER_ALL,
+  GROUP_FILTER_UNGROUPED,
+} from "../vocabGroups";
 
 type SenseEditRow = { part_of_speech: string; meaning: string };
 
@@ -11,7 +16,13 @@ type VocabRow = {
   translation: string;
   phonetic: string;
   part_of_speech: string;
+  group_name: string;
   senses?: { part_of_speech: string; meaning: string }[] | null;
+};
+
+type GroupStat = {
+  name: string;
+  count: number;
 };
 
 type ImportResult = {
@@ -39,6 +50,8 @@ export default function VocabBookPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
+  const [groupFilter, setGroupFilter] = useState(GROUP_FILTER_ALL);
+  const [groups, setGroups] = useState<GroupStat[]>([]);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState("");
 
@@ -55,8 +68,13 @@ export default function VocabBookPage() {
   const [editSenses, setEditSenses] = useState<SenseEditRow[]>([]);
   const [editTranslation, setEditTranslation] = useState("");
   const [editPartOfSpeech, setEditPartOfSpeech] = useState("");
+  const [editGroupName, setEditGroupName] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const [migrateOpen, setMigrateOpen] = useState(false);
+  const [migrateTarget, setMigrateTarget] = useState("");
+  const [migrating, setMigrating] = useState(false);
+  const [migrateError, setMigrateError] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [batchDeleting, setBatchDeleting] = useState(false);
@@ -65,6 +83,25 @@ export default function VocabBookPage() {
 
   const pageSize = 100;
   const pageIds = items.map((i) => i.id);
+  const namedGroups = groups
+    .map((g) => (g.name || "").trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
+
+  const groupFilterOptions = [
+    GROUP_FILTER_ALL,
+    GROUP_FILTER_UNGROUPED,
+    ...namedGroups,
+  ];
+  const migrateTargetOptions = [GROUP_FILTER_UNGROUPED, ...namedGroups];
+
+  useEffect(() => {
+    if (!groupFilterOptions.includes(groupFilter)) {
+      setGroupFilter(GROUP_FILTER_ALL);
+      setPage(1);
+    }
+  }, [groupFilter, groupFilterOptions.join("|")]);
+
   const allOnPageSelected =
     pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
   const someOnPageSelected = pageIds.some((id) => selectedIds.has(id));
@@ -74,7 +111,12 @@ export default function VocabBookPage() {
     setListError("");
     try {
       const res = await api.get("/vocab", {
-        params: { page, page_size: pageSize, q: q.trim() || undefined },
+        params: {
+          page,
+          page_size: pageSize,
+          q: q.trim() || undefined,
+          group: groupFilter,
+        },
       });
       setItems(res.data.list || []);
       setTotal(Number(res.data.total) || 0);
@@ -102,11 +144,26 @@ export default function VocabBookPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, q]);
+  }, [page, q, groupFilter]);
+
+  const loadGroups = useCallback(async () => {
+    try {
+      const res = await api.get("/vocab/groups");
+      const list = Array.isArray(res.data?.list) ? (res.data.list as GroupStat[]) : [];
+      setGroups(list);
+    } catch {
+      // 分组下拉失败不阻断主列表
+      setGroups([]);
+    }
+  }, []);
 
   useEffect(() => {
     loadList();
   }, [loadList]);
+
+  useEffect(() => {
+    loadGroups();
+  }, [loadGroups]);
 
   useEffect(() => {
     const el = headerCheckboxRef.current;
@@ -164,6 +221,7 @@ export default function VocabBookPage() {
       await api.post("/vocab/batch-delete", { ids });
       setSelectedIds(new Set());
       await loadList();
+      await loadGroups();
     } catch (err: unknown) {
       const detail =
         err && typeof err === "object" && "response" in err
@@ -182,6 +240,7 @@ export default function VocabBookPage() {
     setEditWord(item.word);
     setEditPhonetic(item.phonetic || "");
     setEditError("");
+    setEditGroupName(item.group_name || "");
     if (item.senses && item.senses.length > 0) {
       setEditStructured(true);
       setEditSenses(
@@ -204,6 +263,7 @@ export default function VocabBookPage() {
   const closeEdit = () => {
     setEditOpen(false);
     setEditId(null);
+    setEditGroupName("");
     setEditError("");
     setEditSaving(false);
   };
@@ -237,17 +297,24 @@ export default function VocabBookPage() {
     setEditSaving(true);
     setEditError("");
     const payload = editStructured
-      ? { word: wordTrim, phonetic: editPhonetic, senses: validSenses }
+      ? {
+          word: wordTrim,
+          phonetic: editPhonetic,
+          senses: validSenses,
+          group_name: editGroupName.trim(),
+        }
       : {
           word: wordTrim,
           phonetic: editPhonetic,
           translation: editTranslation.trim(),
           part_of_speech: editPartOfSpeech.trim(),
+          group_name: editGroupName.trim(),
         };
     try {
       await api.patch(`/vocab/${editId}`, payload);
       closeEdit();
       await loadList();
+      await loadGroups();
     } catch (err: unknown) {
       const res =
         err && typeof err === "object" && "response" in err
@@ -296,6 +363,7 @@ export default function VocabBookPage() {
         return n;
       });
       await loadList();
+      await loadGroups();
     } catch (err: unknown) {
       const detail =
         err && typeof err === "object" && "response" in err
@@ -331,6 +399,7 @@ export default function VocabBookPage() {
       });
       setImportResult(res.data);
       await loadList();
+      await loadGroups();
     } catch {
       setImportError("导入失败，请检查 CSV 是否包含 word、translation 列");
     }
@@ -338,11 +407,88 @@ export default function VocabBookPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  const openMigrateModal = () => {
+    setMigrateOpen(true);
+    setMigrateError("");
+    setMigrateTarget(namedGroups[0] || GROUP_FILTER_UNGROUPED);
+  };
+
+  const closeMigrateModal = () => {
+    setMigrateOpen(false);
+    setMigrating(false);
+    setMigrateError("");
+  };
+
+  const runBatchMove = async (payload: { ids?: number[]; source_group?: string }) => {
+    if (!migrateTarget) {
+      setMigrateError("请选择迁移目标分组");
+      return;
+    }
+    setMigrating(true);
+    setMigrateError("");
+    try {
+      const res = await api.post("/vocab/batch-move-group", {
+        ...payload,
+        target_group: migrateTarget,
+      });
+      const moved = Number(res.data?.moved || 0);
+      if (payload.ids) {
+        setSelectedIds(new Set());
+      }
+      await loadList();
+      await loadGroups();
+      if (moved <= 0) {
+        setMigrateError("没有可迁移的词条");
+      } else {
+        closeMigrateModal();
+      }
+    } catch (err: unknown) {
+      const detail =
+        err && typeof err === "object" && "response" in err
+          ? (err as { response?: { data?: { detail?: unknown } } }).response
+              ?.data?.detail
+          : undefined;
+      setMigrateError(typeof detail === "string" ? detail : "批量迁移失败");
+    } finally {
+      setMigrating(false);
+    }
+  };
+
+  const migrateSelected = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) {
+      setMigrateError("请先勾选要迁移的词条");
+      return;
+    }
+    await runBatchMove({ ids });
+  };
+
+  const migrateAllUngrouped = async () => {
+    if (!window.confirm("确定将全部未分组词条迁移到目标分组吗？")) {
+      return;
+    }
+    await runBatchMove({ source_group: GROUP_FILTER_UNGROUPED });
+  };
+
   return (
     <div className="card vocab-book">
       <div className="vocab-book-head">
         <h2>单词本</h2>
         <div className="vocab-book-actions">
+          <select
+            className="app-select"
+            value={groupFilter}
+            onChange={(e) => {
+              setGroupFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            {groupFilterOptions.map((value) => (
+              <option key={value} value={value}>
+                分组: {displayGroupName(value)}
+              </option>
+            ))}
+          </select>
           <input
             className="search-input"
             type="search"
@@ -353,6 +499,14 @@ export default function VocabBookPage() {
               setPage(1);
             }}
           />
+          <button
+            type="button"
+            className="ghost-btn"
+            disabled={loading || batchDeleting || deletingId !== null}
+            onClick={openMigrateModal}
+          >
+            批量迁移
+          </button>
           <button
             type="button"
             className="ghost-btn danger"
@@ -423,6 +577,7 @@ export default function VocabBookPage() {
                 />
               </th>
               <th className="col-word">单词</th>
+              <th className="col-group">分组</th>
               <th className="col-ipa">音标</th>
               <th className="col-senses">词性与释义</th>
               <th className="col-actions">操作</th>
@@ -432,7 +587,7 @@ export default function VocabBookPage() {
             {items.length === 0 && !loading ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   style={{ textAlign: "center", color: "#6b7280" }}
                 >
                   暂无词条，请点击「导入 CSV」添加
@@ -458,6 +613,9 @@ export default function VocabBookPage() {
                     />
                   </td>
                   <td className="col-word">{item.word}</td>
+                  <td className="col-group">
+                    {item.group_name ? item.group_name : "未分组"}
+                  </td>
                   <td className="col-ipa">
                     {item.phonetic ? formatIpaForDisplay(item.phonetic) : "—"}
                   </td>
@@ -574,6 +732,14 @@ export default function VocabBookPage() {
                   value={editPhonetic}
                   onChange={(e) => setEditPhonetic(e.target.value)}
                   placeholder="如 əˈbɪlɪti"
+                />
+              </label>
+              <label>
+                所属分组（留空为未分组）
+                <input
+                  value={editGroupName}
+                  onChange={(e) => setEditGroupName(e.target.value)}
+                  placeholder="如 CET6 / 商务英语"
                 />
               </label>
               {editStructured ? (
@@ -713,6 +879,80 @@ export default function VocabBookPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {migrateOpen ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={closeMigrateModal}
+        >
+          <div
+            className="modal-panel modal-wide"
+            role="dialog"
+            aria-labelledby="batch-migrate-title"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <h3 id="batch-migrate-title">批量迁移分组</h3>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={closeMigrateModal}
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-form">
+              <label>
+                迁移目标
+                <select
+                  className="app-select"
+                  value={migrateTarget}
+                  onChange={(e) => setMigrateTarget(e.target.value)}
+                  disabled={migrating}
+                >
+                  {migrateTargetOptions.map((value) => (
+                    <option key={`migrate-target-${value || "ungrouped"}`} value={value}>
+                      {displayGroupName(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="settings-meta">
+                已选词条：{selectedIds.size} 条。你也可以一键迁移全部未分组词条。
+              </p>
+              {migrateError ? <p className="error">{migrateError}</p> : null}
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={migrateSelected}
+                  disabled={migrating || selectedIds.size === 0}
+                >
+                  迁移选中
+                </button>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={migrateAllUngrouped}
+                  disabled={migrating}
+                >
+                  迁移全部未分组
+                </button>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={closeMigrateModal}
+                  disabled={migrating}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       ) : null}

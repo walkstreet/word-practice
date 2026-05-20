@@ -26,6 +26,15 @@ class Vocabulary(VocabBase):
     senses = Column(JSON, nullable=True)
     normalized_word = Column(String(128), unique=True, index=True, nullable=False)
     source = Column(String(64), default="import", nullable=False)
+    group_name = Column(String(128), default="", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class VocabGroup(VocabBase):
+    __tablename__ = "vocab_group"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(128), unique=True, index=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 

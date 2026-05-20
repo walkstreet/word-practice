@@ -7,13 +7,20 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db, get_vocab_db
 from app.deps import get_current_user, verify_dify_import_api_key
-from app.models import PracticeRecord, User, Vocabulary, WrongBook
+from app.models import PracticeRecord, User, VocabGroup, Vocabulary, WrongBook
 from app.schemas import (
     DifyVocabImportBatch,
     DifyVocabImportItem,
     ImportResponse,
+    VocabGroupCreateBody,
+    VocabGroupDeleteBody,
+    VocabGroupItem,
+    VocabGroupListResponse,
+    VocabGroupRenameBody,
     VocabularyBatchDeleteBody,
     VocabularyBatchDeleteResponse,
+    VocabularyBatchMoveGroupBody,
+    VocabularyBatchMoveGroupResponse,
     VocabularyItem,
     VocabularyListResponse,
     VocabularyUpdateBody,
@@ -26,6 +33,52 @@ from app.services.senses import flatten_senses_to_legacy, normalize_sense_dicts,
 router = APIRouter(tags=["vocab"])
 
 _BATCH_DELETE_MAX = 500
+GROUP_FILTER_ALL = "__ALL__"
+GROUP_FILTER_UNGROUPED = "__UNGROUPED__"
+
+
+def normalize_group_name(value: str | None) -> str:
+    return (value or "").strip()
+
+
+def validate_named_group(name: str) -> str:
+    normalized = normalize_group_name(name)
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="group name must not be empty")
+    if normalized in {GROUP_FILTER_ALL, GROUP_FILTER_UNGROUPED}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reserved group name")
+    return normalized
+
+
+def ensure_named_group_exists(vocab_db: Session, name: str) -> None:
+    if not name:
+        return
+    exists = vocab_db.query(VocabGroup.id).filter(VocabGroup.name == name).first()
+    if exists:
+        return
+    vocab_db.add(VocabGroup(name=name))
+
+
+def apply_group_filter(query, group_value: str | None):
+    if group_value is None:
+        return query
+    normalized = group_value.strip()
+    if not normalized or normalized == GROUP_FILTER_ALL:
+        return query
+    if normalized == GROUP_FILTER_UNGROUPED:
+        return query.filter(Vocabulary.group_name == "")
+    return query.filter(Vocabulary.group_name == normalized)
+
+
+def build_group_items(vocab_db: Session) -> list[VocabGroupItem]:
+    count_rows = vocab_db.query(Vocabulary.group_name, func.count(Vocabulary.id)).group_by(Vocabulary.group_name).all()
+    count_map = {str(group_name or ""): int(count) for group_name, count in count_rows}
+    names = {n for (n,) in vocab_db.query(VocabGroup.name).all()}
+    names.update(name for name in count_map.keys() if name)
+    ordered_named = sorted(names)
+    items = [VocabGroupItem(name="", count=count_map.get("", 0))]
+    items.extend(VocabGroupItem(name=name, count=count_map.get(name, 0)) for name in ordered_named)
+    return items
 
 
 def delete_vocabulary_ids(db: Session, vocab_db: Session, ids: list[int]) -> tuple[int, int]:
@@ -116,6 +169,7 @@ def import_vocabulary_from_rows(vocab_db: Session, rows: list[dict], *, source: 
             part_of_speech=part_of_speech,
             normalized_word=normalized,
             source=source,
+            group_name="",
             senses=senses_stored,
         )
         vocab_db.add(row_obj)
@@ -162,6 +216,72 @@ def batch_delete_vocab(
     return VocabularyBatchDeleteResponse(deleted=deleted, not_found=not_found)
 
 
+@router.post("/vocab/batch-move-group", response_model=VocabularyBatchMoveGroupResponse)
+def batch_move_vocab_group(
+    body: VocabularyBatchMoveGroupBody,
+    vocab_db: Session = Depends(get_vocab_db),
+    _: User = Depends(get_current_user),
+):
+    target_raw = (body.target_group or "").strip()
+    if target_raw == GROUP_FILTER_ALL:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="target_group cannot be __ALL__")
+    if target_raw == GROUP_FILTER_UNGROUPED:
+        target = ""
+    else:
+        target = normalize_group_name(target_raw)
+        if target:
+            target = validate_named_group(target)
+            ensure_named_group_exists(vocab_db, target)
+
+    has_ids = bool(body.ids)
+    has_source_group = body.source_group is not None
+    if has_ids == has_source_group:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="provide either ids or source_group",
+        )
+
+    if has_ids:
+        order = list(dict.fromkeys(int(i) for i in (body.ids or []) if i is not None))
+        if not order:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ids must not be empty")
+        if len(order) > _BATCH_DELETE_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"at most {_BATCH_DELETE_MAX} ids per request",
+            )
+        found_rows = vocab_db.query(Vocabulary.id).filter(Vocabulary.id.in_(order)).all()
+        found_ids = [r[0] for r in found_rows]
+        found_set = set(found_ids)
+        not_found = sum(1 for i in order if i not in found_set)
+        if not found_ids:
+            return VocabularyBatchMoveGroupResponse(moved=0, not_found=not_found)
+        moved = (
+            vocab_db.query(Vocabulary)
+            .filter(Vocabulary.id.in_(found_ids))
+            .update({Vocabulary.group_name: target}, synchronize_session=False)
+        )
+        vocab_db.commit()
+        return VocabularyBatchMoveGroupResponse(moved=moved, not_found=not_found)
+
+    source_raw = (body.source_group or "").strip()
+    if source_raw == GROUP_FILTER_ALL:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="source_group cannot be __ALL__")
+    if source_raw == GROUP_FILTER_UNGROUPED or source_raw == "":
+        source = ""
+    else:
+        source = validate_named_group(source_raw)
+    if source == target:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="source and target must be different")
+    moved = (
+        vocab_db.query(Vocabulary)
+        .filter(Vocabulary.group_name == source)
+        .update({Vocabulary.group_name: target}, synchronize_session=False)
+    )
+    vocab_db.commit()
+    return VocabularyBatchMoveGroupResponse(moved=moved, not_found=0)
+
+
 @router.patch("/vocab/{vocabulary_id}", response_model=VocabularyItem)
 def update_vocab(
     vocabulary_id: int,
@@ -194,6 +314,9 @@ def update_vocab(
     row.phonetic = phonetic
     row.translation = translation
     row.part_of_speech = part_of_speech
+    if body.group_name is not None:
+        row.group_name = normalize_group_name(body.group_name)
+        ensure_named_group_exists(vocab_db, row.group_name)
     row.senses = senses_stored
     vocab_db.commit()
     vocab_db.refresh(row)
@@ -204,6 +327,7 @@ def update_vocab(
         translation=row.translation,
         phonetic=row.phonetic or "",
         part_of_speech=row.part_of_speech or "",
+        group_name=row.group_name or "",
         senses=to_sense_out_list(row.senses),
     )
 
@@ -227,6 +351,7 @@ def list_vocab(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=500),
     q: str | None = Query(default=None),
+    group: str | None = Query(default=None),
     vocab_db: Session = Depends(get_vocab_db),
     _: User = Depends(get_current_user),
 ):
@@ -240,6 +365,7 @@ def list_vocab(
                 func.lower(Vocabulary.normalized_word).like(needle),
             )
         )
+    query = apply_group_filter(query, group)
     total = query.count()
     rows = (
         query.order_by(Vocabulary.word.asc())
@@ -256,11 +382,93 @@ def list_vocab(
                 translation=row.translation,
                 phonetic=row.phonetic or "",
                 part_of_speech=row.part_of_speech or "",
+                group_name=row.group_name or "",
                 senses=to_sense_out_list(row.senses),
             )
             for row in rows
         ],
     )
+
+
+@router.get("/vocab/groups", response_model=VocabGroupListResponse)
+def list_vocab_groups(
+    vocab_db: Session = Depends(get_vocab_db),
+    _: User = Depends(get_current_user),
+):
+    return VocabGroupListResponse(list=build_group_items(vocab_db))
+
+
+@router.post("/vocab/groups", response_model=VocabGroupListResponse)
+def create_vocab_group(
+    body: VocabGroupCreateBody,
+    vocab_db: Session = Depends(get_vocab_db),
+    _: User = Depends(get_current_user),
+):
+    name = validate_named_group(body.name)
+    exists = vocab_db.query(VocabGroup.id).filter(VocabGroup.name == name).first()
+    if exists:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="group already exists")
+    vocab_db.add(VocabGroup(name=name))
+    vocab_db.commit()
+    return VocabGroupListResponse(list=build_group_items(vocab_db))
+
+
+@router.post("/vocab/groups/rename", response_model=VocabGroupListResponse)
+def rename_vocab_group(
+    body: VocabGroupRenameBody,
+    vocab_db: Session = Depends(get_vocab_db),
+    _: User = Depends(get_current_user),
+):
+    from_name = validate_named_group(body.from_name)
+    to_name = normalize_group_name(body.to_name)
+    if to_name:
+        to_name = validate_named_group(to_name)
+    if from_name == to_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="from_name and to_name must be different")
+    source_group = vocab_db.query(VocabGroup).filter(VocabGroup.name == from_name).first()
+    source_count = vocab_db.query(Vocabulary.id).filter(Vocabulary.group_name == from_name).count()
+    if source_group is None and source_count == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group not found")
+    if to_name:
+        ensure_named_group_exists(vocab_db, to_name)
+    vocab_db.query(Vocabulary).filter(Vocabulary.group_name == from_name).update(
+        {Vocabulary.group_name: to_name}, synchronize_session=False
+    )
+    if source_group is not None:
+        vocab_db.delete(source_group)
+    vocab_db.commit()
+    return VocabGroupListResponse(list=build_group_items(vocab_db))
+
+
+@router.post("/vocab/groups/delete", response_model=VocabGroupListResponse)
+def delete_vocab_group(
+    body: VocabGroupDeleteBody,
+    vocab_db: Session = Depends(get_vocab_db),
+    _: User = Depends(get_current_user),
+):
+    from_name = validate_named_group(body.name)
+    target_raw = body.target.strip()
+    if target_raw == GROUP_FILTER_UNGROUPED:
+        target = ""
+    elif target_raw == GROUP_FILTER_ALL:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="target cannot be __ALL__")
+    else:
+        target = validate_named_group(target_raw)
+    if from_name == target:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="target must be different")
+    source_group = vocab_db.query(VocabGroup).filter(VocabGroup.name == from_name).first()
+    source_count = vocab_db.query(Vocabulary.id).filter(Vocabulary.group_name == from_name).count()
+    if source_group is None and source_count == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group not found")
+    if target:
+        ensure_named_group_exists(vocab_db, target)
+    vocab_db.query(Vocabulary).filter(Vocabulary.group_name == from_name).update(
+        {Vocabulary.group_name: target}, synchronize_session=False
+    )
+    if source_group is not None:
+        vocab_db.delete(source_group)
+    vocab_db.commit()
+    return VocabGroupListResponse(list=build_group_items(vocab_db))
 
 
 @router.post("/vocab/import", response_model=ImportResponse)

@@ -174,10 +174,10 @@ def migrate_split_vocabulary_if_needed(engine: Engine, vocab_engine: Engine) -> 
             """
             INSERT INTO vocabulary (
                 id, word, translation, phonetic, part_of_speech, senses,
-                normalized_word, source, created_at
+                normalized_word, source, group_name, created_at
             ) VALUES (
                 :id, :word, :translation, :phonetic, :part_of_speech, :senses,
-                :normalized_word, :source, :created_at
+                :normalized_word, :source, :group_name, :created_at
             )
             """
         )
@@ -187,6 +187,7 @@ def migrate_split_vocabulary_if_needed(engine: Engine, vocab_engine: Engine) -> 
                 continue
             d = dict(r)
             d["senses"] = _serialize_senses(d.get("senses"))
+            d["group_name"] = str(d.get("group_name") or "").strip()
             vconn.execute(insert_sql, d)
             existing_ids.add(rid)
 

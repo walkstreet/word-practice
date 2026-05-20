@@ -93,6 +93,7 @@ class DifyVocabImportItem(BaseModel):
     translation: str = ""
     phonetic: str = ""
     part_of_speech: str = ""
+    group_name: str = ""
     senses: Optional[List[VocabSenseIn]] = None
 
     @model_validator(mode="before")
@@ -101,7 +102,7 @@ class DifyVocabImportItem(BaseModel):
         if not isinstance(data, dict):
             return data
         out = {**data}
-        for key in ("word", "translation", "phonetic", "part_of_speech"):
+        for key in ("word", "translation", "phonetic", "part_of_speech", "group_name"):
             if out.get(key) is None:
                 out[key] = ""
             elif isinstance(out[key], str):
@@ -144,6 +145,8 @@ class DifyVocabImportBatch(BaseModel):
 class VocabularyUpdateBody(DifyVocabImportItem):
     """编辑词条：字段规则与 Dify 导入单项相同（word + senses 或 translation）。"""
 
+    group_name: Optional[str] = None
+
 
 class VocabularyItem(BaseModel):
     id: int
@@ -151,12 +154,36 @@ class VocabularyItem(BaseModel):
     translation: str
     phonetic: str
     part_of_speech: str
+    group_name: str = ""
     senses: Optional[List[VocabSenseOut]] = None
 
 
 class VocabularyListResponse(BaseModel):
     total: int
     list: List[VocabularyItem]
+
+
+class VocabGroupItem(BaseModel):
+    name: str
+    count: int
+
+
+class VocabGroupListResponse(BaseModel):
+    list: List[VocabGroupItem]
+
+
+class VocabGroupRenameBody(BaseModel):
+    from_name: str
+    to_name: str
+
+
+class VocabGroupDeleteBody(BaseModel):
+    name: str
+    target: str
+
+
+class VocabGroupCreateBody(BaseModel):
+    name: str
 
 
 class VocabularyBatchDeleteBody(BaseModel):
@@ -168,6 +195,17 @@ class VocabularyBatchDeleteResponse(BaseModel):
     """实际删除的词条数（已存在的 id）。"""
     not_found: int
     """请求里在库中不存在的 id 数。"""
+
+
+class VocabularyBatchMoveGroupBody(BaseModel):
+    ids: Optional[List[int]] = None
+    source_group: Optional[str] = None
+    target_group: str
+
+
+class VocabularyBatchMoveGroupResponse(BaseModel):
+    moved: int
+    not_found: int = 0
 
 
 class NextQuestionResponse(BaseModel):

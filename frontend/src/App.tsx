@@ -6,6 +6,7 @@ import PracticePage from "./pages/PracticePage";
 import PracticeHistoryPage from "./pages/PracticeHistoryPage";
 import WrongBookPage from "./pages/WrongBookPage";
 import StatsPage from "./pages/StatsPage";
+import SettingsPage from "./pages/SettingsPage";
 import { UiPreferencesProvider, useUiPreferences } from "./uiPreferences";
 
 function Layout({ children }: { children: JSX.Element }) {
@@ -58,6 +59,9 @@ function Layout({ children }: { children: JSX.Element }) {
             <NavLink to="/stats" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
               统计
             </NavLink>
+            <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+              设置
+            </NavLink>
           </div>
           <div className="nav-actions">
             <button type="button" className="ghost-btn" onClick={toggleShowPhonetic}>
@@ -85,6 +89,7 @@ export default function App() {
         <Route path="/wrongbook" element={<Layout><WrongBookPage /></Layout>} />
         <Route path="/history" element={<Layout><PracticeHistoryPage /></Layout>} />
         <Route path="/stats" element={<Layout><StatsPage /></Layout>} />
+        <Route path="/settings" element={<Layout><SettingsPage /></Layout>} />
         <Route path="*" element={<Navigate to={token ? "/practice" : "/login"} replace />} />
       </Routes>
     </UiPreferencesProvider>

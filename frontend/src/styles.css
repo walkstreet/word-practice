@@ -171,6 +171,7 @@ body {
 }
 
 input,
+select,
 button {
   padding: 10px 12px;
   border: 1px solid #d7d9e0;
@@ -425,6 +426,12 @@ td {
   border-radius: 8px;
 }
 
+.app-select {
+  min-width: 150px;
+  background: #fff;
+  color: #2e3647;
+}
+
 .vocab-meta {
   margin: 4px 0 12px;
   color: #5f6473;
@@ -458,6 +465,12 @@ input.table-checkbox:disabled {
   white-space: nowrap;
   font-weight: 600;
   vertical-align: top;
+}
+
+.vocab-table .col-group {
+  white-space: nowrap;
+  vertical-align: top;
+  color: #4b5364;
 }
 
 .vocab-table .col-ipa {
@@ -693,3 +706,92 @@ input.table-checkbox:disabled {
   gap: 10px;
   margin-top: 8px;
 }
+
+.settings-card {
+  max-width: 560px;
+  display: grid;
+  gap: 14px;
+}
+
+.settings-desc {
+  margin: 4px 0 12px;
+  color: #4b5364;
+}
+
+.settings-section {
+  border: 1px solid #e6eaf5;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fafbff;
+}
+
+.settings-section-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: #2e3647;
+}
+
+.settings-field {
+  display: grid;
+  gap: 6px;
+  max-width: 340px;
+  font-size: 14px;
+  color: #4b5364;
+}
+
+.settings-meta {
+  margin-top: 10px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.settings-group-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-actions {
+  margin-top: 14px;
+}
+
+.settings-actions-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-inline-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.settings-inline-row input {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-inline-row-wide .app-select {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-inline-row .ghost-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.settings-group-list {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #4b5364;
+  display: grid;
+  gap: 6px;
+}
+
+.settings-manage-modal {
+  max-width: 680px;
+}
+
